@@ -89,20 +89,29 @@ class PromotionsController extends Controller
 
     /**
      * Stores entrant details and
-     * checks if winning moment value matches the mechanics.
+     * checks if winning-moment or chance value matches the mechanics.
      * Will inform entrant via email if he/she wins.
+     * @param $type
      * @param Request $request
      * @return JsonResponse
      */
-    public function checkWinningMoment(Request $request)
+    public function checkWinner($type, Request $request)
     {
+        // pre-validate data
+        if ($type == 'winning-moment' || $type == 'chance') {
+            // continue;
+        }
+        else {
+            return response()->json('Endpoint does not exist, should be winning-moment or chance.', 404);
+        }
 
         // define the data
         $data           = $request->all();
         $entrantName    = $data['entrant_name'] ?? false;
         $entrantEmail   = $data['entrant_email'] ?? false;
         $promoName      = $data['promo_name'] ?? false;
-        $winningMoment  = Carbon::parse($data['winning_moment'])->format('Y-m-d H:i:s') ?? false;
+        $winningMoment  = isset($data['winning_moment']) && strtotime($data['winning_moment']) ? Carbon::parse($data['winning_moment'])->format('Y-m-d H:i:s') : false;
+        $chance         = $data['chance'] ?? false;
         $isWinner       = false;
 
         // validate the data
@@ -118,9 +127,17 @@ class PromotionsController extends Controller
         {
             return response()->json('Value for promo_name is not defined.', 400);
         }
-        if ($winningMoment === false)
-        {
-            return response()->json('Value for winning_moment is not defined.', 400);
+        if ($type == 'winning-moment') {
+            if ($winningMoment === false)
+            {
+                return response()->json('Value for winning_moment is not defined, or value is not in H:i:s time format.', 400);
+            }
+        }
+        if ($type == 'chance') {
+            if ($chance === false)
+            {
+                return response()->json('Value for chance is not defined.', 400);
+            }
         }
 
         // Check if entrant exists in client table
@@ -152,18 +169,38 @@ class PromotionsController extends Controller
             return response()->json('The promotion name ' . $promoName . ' does not exist.', 404);
         }
 
-        // add entrant to entries, for record purposes
-        $newEntryId = DB::table('entries')->insertGetId([
+        // define for winning-moment
+        $entryData = [
             'promotion_id'      => $promotionId,
             'entrant_id'        => $entrantId,
             'winning_moment'    => $winningMoment
-        ]);
+        ];
 
-        // check if there exists a promotion with winning moment
-        $mechanicDetails = DB::table('mechanics')->where([
+        $mechanicData = [
             'promotion_id'      => $promotionId,
             'winning_moment'    => $winningMoment
-        ])->get();
+        ];
+
+        // redefine for chance
+        if ($type == 'chance') {
+            $entryData = [
+                'promotion_id'  => $promotionId,
+                'entrant_id'    => $entrantId,
+                'chance'        => $chance
+            ];
+
+            $mechanicData = [
+                'promotion_id'  => $promotionId,
+                'chance'        => $chance
+            ];
+
+        }
+
+        // add entrant to entries, for record purposes
+        $newEntryId = DB::table('entries')->insertGetId($entryData);
+
+        // check if there exists a promotion with winning moment
+        $mechanicDetails = DB::table('mechanics')->where($mechanicData)->get();
 
         if (count($mechanicDetails)) {
             DB::table('winners')->insertGetId([
@@ -181,106 +218,10 @@ class PromotionsController extends Controller
             'entrant_name'      => $entrantName,
             'promotion_name'    => $promoName,
             'winning_moment'    => $winningMoment,
-            'is_winner'         => $isWinner
-        ]);
-    }
-
-    /**
-     * Stores entrant details and
-     * checks if chance value matches the mechanics.
-     * Will inform entrant via email if he/she wins.
-     * TODO needs to refactor code since both checkChance and checkWinningMoment has similar process logic
-     * @param Request $request
-     * @return JsonResponse
-     */
-    public function checkChance(Request $request)
-    {
-
-        // define the data
-        $data           = $request->all();
-        $entrantName    = $data['entrant_name'] ?? false;
-        $entrantEmail   = $data['entrant_email'] ?? false;
-        $promoName      = $data['promo_name'] ?? false;
-        $chance         = $data['chance'] ?? false;
-        $isWinner       = false;
-
-        // validate the data
-        if ($entrantName === false)
-        {
-            return response()->json('Value for entrant_name is not defined.', 400);
-        }
-        if ($entrantEmail === false)
-        {
-            return response()->json('Value for entrant_email is not defined.', 400);
-        }
-        if ($promoName === false)
-        {
-            return response()->json('Value for promo_name is not defined.', 400);
-        }
-        if ($chance === false)
-        {
-            return response()->json('Value for chance is not defined.', 400);
-        }
-
-        // Check if entrant exists in client table
-        $entrants = DB::table('entrants')->where('entrant_email', $entrantEmail)->get();
-        $entrantId = 0;
-
-        // If yes, get ID
-        if (count($entrants) > 0) {
-            $entrantId = $entrants[0]->id;
-        }
-        // If no, create and get ID
-        else {
-            $newEntrant = DB::table('entrants')->insertGetId([
-                'entrant_name'  => $entrantName,
-                'entrant_email' => $entrantEmail
-            ]);
-
-            $entrantId = $newEntrant;
-        }
-
-        // Check if promo exists
-        $promotions = DB::table('promotions')->where('promotion_name', $promoName)->get();
-        $promotionId = 0;
-
-        if (count($promotions) > 0) {
-            $promotionId = $promotions[0]->id;
-        }
-        else {
-            return response()->json('The promotion name ' . $promoName . ' does not exist.', 404);
-        }
-
-        // add entrant to entries, for record purposes
-        $newEntryId = DB::table('entries')->insertGetId([
-            'promotion_id'  => $promotionId,
-            'entrant_id'    => $entrantId,
-            'chance'        => $chance
-        ]);
-
-        // check if there exists a promotion with chance
-        $mechanicDetails = DB::table('mechanics')->where([
-            'promotion_id'  => $promotionId,
-            'chance'        => $chance
-        ])->get();
-
-        if (count($mechanicDetails)) {
-            DB::table('winners')->insertGetId([
-                'entry_id' => $newEntryId
-            ]);
-
-            $isWinner = true;
-
-            // TODO: send email
-            Mail::to($entrantEmail)->send(new Winner());
-        }
-
-        // Return the entrant name, promotion name, winning moment, and if he won or not
-        return response()->json([
-            'entrant_name'      => $entrantName,
-            'promotion_name'    => $promoName,
             'chance'            => $chance,
             'is_winner'         => $isWinner
         ]);
+
     }
+
 }

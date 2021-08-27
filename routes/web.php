@@ -20,7 +20,6 @@ $router->get('/', function () use ($router) {
 $router->group(['prefix' => 'api'], function () use ($router) {
 
     $router->post('promotion/{slug}', 'PromotionsController@save');
-    $router->post('entrant/winning-moment', 'PromotionsController@checkWinningMoment');
-    $router->post('entrant/chance', 'PromotionsController@checkChance');
+    $router->post('entrant/{type}', 'PromotionsController@checkWinner');
 
 });
